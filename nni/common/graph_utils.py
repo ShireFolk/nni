@@ -395,6 +395,32 @@ class TorchModuleGraph(TorchGraph):
                              node_group, inputs=list(inputs), outputs=list(outputs))
         return nodepy
 
+    def _extract_unpack_info(self, node_group, cpp_node):
+        # only suport the tuple unpack operations
+        assert cpp_node.kind() in [TUPLE_UNPACK_KIND]
+        unpack_info = {}
+        
+        # get the order of the input and output tensors
+        input_order = []
+        assert len(list(cpp_node.inputs())) == 1
+        tuple_construct_cpp = list(cpp_node.inputs())[0].node()
+        assert tuple_construct_cpp.kind() == "prim::TupleConstruct"
+
+        input_tensors = list(tuple_construct_cpp.inputs())
+        for _tensor in input_tensors:
+            debug_name = _tensor.debugName()
+            input_order.append(self.output_to_node[debug_name].unique_name)
+        unpack_info['in_order'] = input_order
+
+        output_order = []
+        output_tensors = list(cpp_node.outputs())
+        for _tensor in output_tensors:
+            debug_name = _tensor.debugName()
+            output_order.append(list(map(lambda x: x.unique_name, self.input_to_node[debug_name])))
+        unpack_info['out_order'] = output_order
+
+        return unpack_info
+
     def _extract_cat_info(self, node_group, cpp_node):
         """
         Extract the detail information of the cat operation,
@@ -772,6 +798,10 @@ class TorchModuleGraph(TorchGraph):
                                        node_group.node_cpps))[0]
                 node_group.auxiliary = self._extract_cat_info(
                     node_group, cpp_node)
+            elif node_group.op_type in [TUPLE_UNPACK_KIND]:
+                cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
+                                       node_group.node_cpps))[0]
+                node_group.auxiliary = self._extract_unpack_info(node_group, cpp_node)
 
     def find_predecessors(self, unique_name):
         """

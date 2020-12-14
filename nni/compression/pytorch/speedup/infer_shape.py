@@ -188,6 +188,7 @@ class ModuleMasks:
         self.param_masks = dict()
         self.input_mask = None
         self.output_mask = None
+        self.tuple_masks = dict()
 
     def set_param_masks(self, name, mask):
         """
@@ -217,6 +218,17 @@ class ModuleMasks:
             The mask for output
         """
         self.output_mask = mask
+
+    def set_tuple_masks(self, idx, mask):
+        """
+        Parameters
+        ----------
+        idx : int
+            The index of the node in tuple/list unpack
+        mask : CoarseMask
+            The mask for output
+        """
+        self.tuple_masks[idx] = mask
 
     def __repr__(self):
         return 'module_name: {}, input_mask: {}, output_mask: {}, param_masks: {}'.format(
@@ -273,7 +285,9 @@ infer_from_inshape = {
     'aten::mean': lambda module_masks, mask, shape: mean_inshape(module_masks, mask, shape),
     'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
     'Dropout2d': lambda module_masks, mask: dropout_inshape(module_masks, mask),
-    'aten::dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask)
+    'aten::dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
+    # tuple/list unpack
+    'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited)
 }
 
 """
@@ -308,9 +322,30 @@ infer_from_outshape = {
     'aten::mean': lambda module_masks, mask, shape: mean_outshape(module_masks, mask, shape),
     'Dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask),
     'Dropout2d': lambda module_masks, mask: dropout_outshape(module_masks, mask),
-    'aten::dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask)
+    'aten::dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask),
+
+    'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited)
 }
 
+def unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited):
+    in_order = unpack_info['in_order']
+    out_order = unpack_info['out_order']
+
+    if last_visited in in_order:
+        idx = in_order.index(last_visited)
+        if module_masks.tuple_masks.get(idx) is not None:
+            assert module_masks.tuple_masks[idx] == mask
+        module_masks.set_tuple_masks(idx, mask)
+        return mask
+
+    for idx, nodes in enumerate(out_order):
+        if last_visited in nodes:
+            if module_masks.tuple_masks.get(idx) is not None:
+                assert module_masks.tuple_masks[idx] == mask
+            module_masks.set_tuple_masks(idx, mask)
+            return mask
+
+    assert False, "{} is not connected to an unpack operation".format(last_visited)
 
 def dropout_inshape(module_masks, mask):
     if module_masks.input_mask is None:

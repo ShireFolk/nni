@@ -94,7 +94,7 @@ class ModelSpeedup:
                 output_cmask = infer_from_inshape[m_type](module_masks,
                                                           in_shape,
                                                           self.torch_graph.name_to_node[module_name].auxiliary)
-            elif m_type in ['aten::cat']:
+            elif m_type in ['aten::cat', 'prim::TupleUnpack']:
                 # To calculate the mask for concat operation, the output shape
                 # , cat dimension, and the order of the input parameters.
                 output_cmask = infer_from_inshape[m_type](module_masks,
@@ -113,6 +113,20 @@ class ModelSpeedup:
                 input_cmask = infer_from_outshape[m_type](module_masks, out_shape, self.torch_graph.name_to_node[module_name].auxiliary)
             else:
                 input_cmask = infer_from_outshape[m_type](module_masks, out_shape)
+
+        if m_type in ['prim::TupleUnpack']:
+            unpack_info = self.torch_graph.name_to_node[module_name].auxiliary
+            in_order, out_order = unpack_info["in_order"], unpack_info["out_order"]
+            if last_module in in_order:
+                idx = in_order.index(last_module)
+                for _module_name in out_order[idx]:
+                    self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
+                return
+            else:
+                for idx, nodes in enumerate(out_order):
+                    if last_module in nodes:
+                        self.infer_module_mask(in_order[idx], module_name, out_shape=input_cmask)
+                return
 
         if input_cmask:
             predecessors = self.torch_graph.find_predecessors(module_name)
