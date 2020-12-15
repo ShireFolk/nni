@@ -285,8 +285,8 @@ class TorchModuleGraph(TorchGraph):
         self.global_count += 1
         op_type = node.kind()
         node_group = [node]
-        inputs = set()
-        outputs = set()
+        inputs = []
+        outputs = []
         node_queue = queue.Queue()
         node_queue.put(node)
         while not node_queue.empty():
@@ -303,17 +303,17 @@ class TorchModuleGraph(TorchGraph):
                                     node_group.append(predecessor_node)
                                     node_queue.put(predecessor_node)
                             else:
-                                inputs.add(input_name)
+                                inputs.append(input_name)
                         else:
-                            inputs.add(input_name)
+                            inputs.append(input_name)
                 else:
-                    inputs.add(input_name)
+                    inputs.append(input_name)
         for output in node.outputs():
             if output.node().kind() == CONSTANT_KIND:
                 continue
-            outputs.add(output.debugName())
+            outputs.append(output.debugName())
         nodepy = NodePyGroup(node_name, unique_name, module_type, op_type,
-                             node_group, inputs=list(inputs), outputs=list(outputs), key_node=node)
+                             node_group, inputs=inputs, outputs=outputs, key_node=node)
         return nodepy
 
     def _expand_module_node(self, node, node_name, unique_name, op_type, nodes,
