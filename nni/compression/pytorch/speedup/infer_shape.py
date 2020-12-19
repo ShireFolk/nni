@@ -266,6 +266,7 @@ infer_from_inshape = {
     'aten::max_pool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'aten::avg_pool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'aten::adaptive_avg_pool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
+    'aten::upsample_nearest2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'AvgPool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'AdaptiveAvgPool2d': lambda module_masks, mask: maxpool2d_inshape(module_masks, mask),
     'aten::size': lambda module_masks, mask: size_inshape(module_masks, mask),
@@ -286,7 +287,7 @@ infer_from_inshape = {
     'Dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
     'Dropout2d': lambda module_masks, mask: dropout_inshape(module_masks, mask),
     'aten::dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
-    # tuple/list unpack
+    # tuple unpack
     'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited)
 }
 
@@ -323,8 +324,6 @@ infer_from_outshape = {
     'Dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask),
     'Dropout2d': lambda module_masks, mask: dropout_outshape(module_masks, mask),
     'aten::dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask),
-
-    'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited)
 }
 
 def unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited):

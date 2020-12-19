@@ -118,9 +118,10 @@ class ModelSpeedup:
             unpack_info = self.torch_graph.name_to_node[module_name].auxiliary
             in_order, out_order = unpack_info["in_order"], unpack_info["out_order"]
             if last_module in in_order:
-                idx = in_order.index(last_module)
-                for _module_name in out_order[idx]:
-                    self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
+                for idx, node in enumerate(in_order):
+                    if node == last_module:
+                        for _module_name in out_order[idx]:
+                            self.infer_module_mask(_module_name, module_name, in_shape=output_cmask)
                 return
             else:
                 for idx, nodes in enumerate(out_order):
