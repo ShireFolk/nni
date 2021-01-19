@@ -6,6 +6,7 @@ One is given output shape, infer its input shape and initialization parameters (
 The other is given input shape, infer its output shape and initialization parameters (e.g., weight's shape)
 """
 
+import copy
 import logging
 import torch
 
@@ -288,7 +289,17 @@ infer_from_inshape = {
     'Dropout2d': lambda module_masks, mask: dropout_inshape(module_masks, mask),
     'aten::dropout': lambda module_masks, mask: dropout_inshape(module_masks, mask),
     # tuple unpack
-    'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited)
+    'prim::TupleUnpack': lambda module_masks, mask, unpack_info, last_visited: unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited),
+
+    # new
+    'aten::_convolution': lambda module_masks, mask: conv2d_inshape(module_masks, mask), # not correct
+    'aten::detach': lambda module_masks, mask: dropout_inshape(module_masks, mask), # merged
+    'aten::contiguous': lambda module_masks, mask: dropout_inshape(module_masks, mask),
+    'aten::permute': lambda module_masks, mask, permute_info: permute_inshape(module_masks, mask, permute_info),
+    'aten::max': lambda module_masks, mask, max_info: max_inshape(module_masks, mask, max_info),
+    'aten::topk': lambda module_masks, mask, topk_info: topk_inshape(module_masks, mask, topk_info),
+    'aten::split': lambda module_masks, mask, split_info: split_inshape(module_masks, mask, split_info),
+    'aten::softmax': lambda module_masks, mask: relu_inshape(module_masks, mask),
 }
 
 """
@@ -325,6 +336,44 @@ infer_from_outshape = {
     'Dropout2d': lambda module_masks, mask: dropout_outshape(module_masks, mask),
     'aten::dropout': lambda module_masks, mask: dropout_outshape(module_masks, mask),
 }
+
+def permute_inshape(module_masks, mask, permute_info):
+    if module_masks.input_mask is not None:
+        assert module_masks.input_mask <= mask
+
+    output_mask = copy.deepcopy(mask)
+    output_mask.mask_index = [mask.mask_index[i] for i in permute_info]
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(output_mask)
+    return module_masks.output_mask
+
+def max_inshape(module_masks, mask, max_info):
+    if module_masks.input_mask is not None:
+        assert module_masks.input_mask <= mask
+
+    dim, keepdim = max_info['dim'], max_info['keepdim']
+
+    output_mask = copy.deepcopy(mask)
+    if keepdim:
+        output_mask.mask_index[dim] = None
+    else:
+        output_mask.mask_index.pop(dim)
+
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(output_mask)
+    return module_masks.output_mask
+
+def split_inshape(module_masks, mask, split_info):
+    if module_masks.input_mask is not None:
+        assert module_masks.input_mask <= mask
+
+    num, dim = split_info['num'], split_info['dim']
+    assert mask.mask_index[dim] is None
+
+    module_masks.set_input_mask(mask)
+    module_masks.set_output_mask(mask)
+    return module_masks.output_mask
+
 
 def unpack_inshape_outshape(module_masks, mask, unpack_info, last_visited):
     in_order = unpack_info['in_order']
@@ -998,7 +1047,7 @@ def conv2d_inshape(module_masks, mask):
 
     # shape changes pass through depths wise conv layers
     m = module_masks.module
-    if m.in_channels == m.out_channels == m.groups:
+    if m is not None and (m.in_channels == m.out_channels == m.groups):
         module_masks.output_mask = mask
         module_masks.input_mask = mask
         return mask
@@ -1054,6 +1103,7 @@ def conv2d_outshape(module_masks, mask):
 
 def convtranspose2d_mask(module_masks, mask):
     # TODO support the Convtranspose2d Pruning for the L1FilterPruner
+    return None, None
     raise Exception(
         "Current Filter pruner cannot prune the ConvTranspose2d, will support pruning ConvTranspose2d later")
 

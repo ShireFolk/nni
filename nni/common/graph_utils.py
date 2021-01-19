@@ -395,6 +395,23 @@ class TorchModuleGraph(TorchGraph):
                              node_group, inputs=list(inputs), outputs=list(outputs))
         return nodepy
 
+    def _extract_constant_list(self, list_construct_cpp_node, types):
+        assert list_construct_cpp_node.kind() == LIST_CONSTRUCT_KIND
+        elements = list(map(lambda x: x.node(), list_construct_cpp_node.inputs()))
+        assert all(map(lambda x: x.kind() == CONSTANT_KIND, elements))
+        return self._extract_constants(elements, types)
+
+    def _extract_constants(self, constants, types):
+        assert isinstance(types, list) or isinstance(types, str)
+        if isinstance(types, list):
+            assert len(constants) == len(types)
+        else:
+            types = [types] * len(constants)
+        return list(map(
+            lambda et_pair: getattr(et_pair[0], et_pair[1])("value"),
+            zip(constants, types)
+        ))
+
     def _extract_unpack_info(self, node_group, cpp_node):
         # only suport the tuple unpack operations
         assert cpp_node.kind() in [TUPLE_UNPACK_KIND]
@@ -802,6 +819,31 @@ class TorchModuleGraph(TorchGraph):
                 cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
                                        node_group.node_cpps))[0]
                 node_group.auxiliary = self._extract_unpack_info(node_group, cpp_node)
+            elif node_group.op_type == 'aten::permute':
+                cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
+                                       node_group.node_cpps))[0]
+                list_construct_cpp_node = list(cpp_node.inputs())[1].node()
+                node_group.auxiliary = self._extract_constant_list(list_construct_cpp_node, 'i')
+            elif node_group.op_type in ['aten::split', 'aten::max', 'aten::topk']:
+                cpp_node = list(filter(lambda x: x.kind() == node_group.op_type,
+                                       node_group.node_cpps))[0]
+                constants = list(map(lambda x: x.node(), cpp_node.inputs()))[1:]
+
+                if node_group.op_type == 'aten::split':
+                    num, dim = self._extract_constants(constants, 'i')
+                    node_group.auxiliary = {
+                        'num': num, 'dim': dim
+                    }
+                elif node_group.op_type == 'aten::max':
+                    dim, keepdim = self._extract_constants(constants, 'i')
+                    node_group.auxiliary = {
+                        'dim': dim, 'keepdim': bool(keepdim)
+                    }
+                elif node_group.op_type == 'aten::topk':
+                    k, dim = self._extract_constants(constants, 'i')[:2]
+                    node_group.auxiliary = {
+                        'k': k, 'dim': dim,
+                    }
 
     def find_predecessors(self, unique_name):
         """
